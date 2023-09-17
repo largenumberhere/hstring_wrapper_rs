@@ -1,16 +1,17 @@
 use std::error::Error;
 use std::ffi::{c_char, c_int, CStr};
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::str::Utf8Error;
 use hstring::{HSTRING, hstring_clear, hstring_free, hstring_new, hstring_push_string_raw};
 
+/// A slightly less unsafe wrapper for the HSTRING bindings
 pub struct Rhstring {
     inner: HSTRING
 }
 
 impl Rhstring{
-
-    //Add the contents of a str to the underlying hstring
+    /// Add the contents of a str to the underlying hstring
     pub fn push_str(&mut self, value: &str) {
         // Get the inner hstring reference and cast it to a pointer
         let mut hs: *mut HSTRING = &mut self.inner;
@@ -25,9 +26,9 @@ impl Rhstring{
         }
     }
 
-    //Copy the contents to a String, free,  and return the string.
-    //May fail if the contents aren't valid utf8
-    pub fn to_rust_string(mut self)-> Result<String, Box<dyn Error>>{
+    /// Copy the contents to a String, free,  and return the string.
+    /// May fail if the contents aren't valid utf8
+    pub fn to_rust_string(mut self)-> Result<String, Utf8Error>{
         //Grab the inner hstring
         let mut hs = self.inner;
 
@@ -52,23 +53,28 @@ impl Rhstring{
         Ok(string)
     }
 
-    ///Create a hstring.
-    ///It immediately allocates 1 bytes on the heap to maintain backwards compatability with C apis that always expect a null terminator in a string.
+    /// Get a window into the underlying data as raw bytes
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe{ core::slice::from_raw_parts(self.inner.contents as *const u8, self.inner.length) }
+    }
+
+    /// Create a hstring.
+    /// It immediately allocates 1 bytes on the heap to maintain backwards compatability with C apis that always expect a null terminator in a string.
     pub fn new() -> Rhstring{
         Rhstring{
             inner: unsafe { hstring_new() }
         }
     }
 
-    //Sets length to 0.
-    //Does not shrink for performance reasons
+    /// Sets length to 0.
+    /// Does not shrink for performance reasons
     pub fn clear(&mut self){
         unsafe {
             hstring_clear(&mut self.inner);
         }
     }
 
-    //Get a reference to inner string and check if it's valid utf8, else error.
+    /// Get a reference to inner string and check if it's valid utf8, else error.
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
         let hs = & self.inner;
 
@@ -86,7 +92,7 @@ impl Rhstring{
         Ok(st)
     }
 
-    // Copy the contents of a &str into the Rhstirng
+    /// Copy the contents of a &str into the Rhstirng
     pub fn from_str(st: &str) -> Rhstring{
         let mut hstring = unsafe{ hstring_new() };
         let ptr = st.as_ptr();
@@ -99,7 +105,7 @@ impl Rhstring{
         }
     }
 
-    // View the contents as a cstr.
+    /// View the contents as a cstr.
     pub fn as_cstr(&self) -> &CStr{
         let hs = &self.inner;
         unsafe{ std::ffi::CStr::from_ptr(hs.contents) }
@@ -126,3 +132,46 @@ impl Debug for Rhstring{
             .finish()
     }
 }
+
+impl Clone for Rhstring{
+
+    /// Clone copies the inner value byte by byte as it is expected to
+    fn clone(&self) -> Self {
+        let hs1 = &self.inner;
+
+        // Create another hstring
+        let mut hs2 = unsafe{ hstring_new() };
+
+        // Copy the first one's contents into the 2nd
+        unsafe {
+            hstring_push_string_raw(&mut hs2, self.inner.contents, self.inner.length as c_int);
+        }
+
+        // Put it in the wrapper type
+        Rhstring{
+            inner: hs2
+        }
+    }
+}
+
+impl Default for Rhstring{
+    fn default() -> Self {
+        Rhstring::new()
+    }
+}
+
+impl PartialEq for Rhstring{
+    /// Value based equality
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes().eq(other.as_bytes())
+    }
+}
+
+impl Hash for Rhstring{
+    /// Hash the inner bytes
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_bytes().hash(state);
+    }
+}
+
+impl Eq for Rhstring {}

@@ -16,7 +16,16 @@ fn main() {
     hstring.clear();
     for i in 0..100 {
         hstring.push_str("h");
-        println!("{:#?}", hstring);
+
+        let mut rhs2 = hstring.clone();
+        println!("1: {:#?}", hstring);
+        println!("2: {:#?}", rhs2);
+
+        assert_eq!(hstring, rhs2);
+
+        rhs2.push_str("aaa");
+        assert_ne!(hstring, rhs2);
+
     }
 
 }
