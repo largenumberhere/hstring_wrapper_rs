@@ -5,14 +5,55 @@ use std::hash::{Hash, Hasher};
 use std::str::Utf8Error;
 use hstring::{HSTRING, hstring_clear, hstring_free, hstring_new, hstring_push_string_raw};
 
-/// A slightly less unsafe wrapper for the HSTRING bindings
+/// A slightly less horribly unsafe wrapper for the raw HSTRING bindings.
+/// Not for production code!
 pub struct Rhstring {
     inner: HSTRING
+}
+
+trait ForceNotNull<T>{
+    fn force_not_null(&self);
+    fn force_deref(&self) -> T;
+}
+
+impl<T> ForceNotNull<T> for *const T {
+    fn force_not_null(&self) {
+        if self.is_null() {
+            panic!("Unexpected null pointer");
+        }
+    }
+
+    fn force_deref(&self) -> T {
+        if self.is_null() {
+            panic!("Unexpected null pointer");
+        }
+        else{
+            unsafe{ self.read() }
+        }
+    }
+}
+
+impl<T> ForceNotNull<T> for *mut T {
+    fn force_not_null(&self) {
+        if self.is_null() {
+            panic!("Unexpected null pointer");
+        }
+    }
+
+    fn force_deref(&self) -> T {
+        if self.is_null() {
+            panic!("Unexpected null pointer");
+        }
+        else{
+            unsafe{ self.read() }
+        }
+    }
 }
 
 impl Rhstring{
     /// Add the contents of a str to the underlying hstring
     pub fn push_str(&mut self, value: &str) {
+        self.inner.contents.force_not_null();
         // Get the inner hstring reference and cast it to a pointer
         let mut hs: *mut HSTRING = &mut self.inner;
 
@@ -29,6 +70,7 @@ impl Rhstring{
     /// Copy the contents to a String, free,  and return the string.
     /// May fail if the contents aren't valid utf8
     pub fn to_rust_string(mut self)-> Result<String, Utf8Error>{
+        self.inner.contents.force_not_null();
         //Grab the inner hstring
         let mut hs = self.inner;
 
@@ -55,12 +97,13 @@ impl Rhstring{
 
     /// Get a window into the underlying data as raw bytes
     pub fn as_bytes(&self) -> &[u8] {
+        self.inner.contents.force_not_null();
         unsafe{ core::slice::from_raw_parts(self.inner.contents as *const u8, self.inner.length) }
     }
 
     /// Create a hstring.
     /// It immediately allocates 1 bytes on the heap to maintain backwards compatability with C apis that always expect a null terminator in a string.
-    pub fn new() -> Rhstring{
+    fn new() -> Rhstring{
         Rhstring{
             inner: unsafe { hstring_new() }
         }
@@ -76,6 +119,7 @@ impl Rhstring{
 
     /// Get a reference to inner string and check if it's valid utf8, else error.
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
+        self.inner.contents.force_not_null();
         let hs = & self.inner;
 
         //Make a slice from contents
@@ -107,6 +151,7 @@ impl Rhstring{
 
     /// View the contents as a cstr.
     pub fn as_cstr(&self) -> &CStr{
+        self.inner.contents.force_not_null();
         let hs = &self.inner;
         unsafe{ std::ffi::CStr::from_ptr(hs.contents) }
     }
@@ -124,12 +169,21 @@ impl Drop for Rhstring{
 
 impl Debug for Rhstring{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Rhstring")
-            .field("inner.length",&self.inner.length)
-            .field("inner.capacity", &self.inner.capacity)
-            .field("inner.contents(ptr)",&self.inner.contents)
-            .field("innter.contents.as_str()", &self.as_str())
-            .finish()
+        let mut s = f.debug_struct("Rhstring");
+            s.field("inner.length",&self.inner.length)
+            .field("inner.capacity", &self.inner.capacity);
+
+        let is_n = self.inner.contents.is_null();
+        if is_n {
+            s.field("inner contents(ptr)", &"NULL");
+        }
+        else {
+            s.field("inner.contents(ptr)", &self.inner.contents)
+                .field("innter.contents.as_str()", &self.as_str());
+        }
+
+        s.finish()
+
     }
 }
 
@@ -137,6 +191,7 @@ impl Clone for Rhstring{
 
     /// Clone copies the inner value byte by byte as it is expected to
     fn clone(&self) -> Self {
+        self.inner.contents.force_not_null();
         let hs1 = &self.inner;
 
         // Create another hstring
