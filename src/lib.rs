@@ -7,12 +7,16 @@ use hstring::{HSTRING, hstring_clear, hstring_free, hstring_new, hstring_push_st
 
 /// A slightly less horribly unsafe wrapper for the raw HSTRING bindings.
 /// Not for production code!
+/// Just for my own learning - It's a horrible example! Please please please avert your eyes before your computer segfaults and catches on fire!
 pub struct Rhstring {
     inner: HSTRING
 }
 
 trait ForceNotNull<T>{
+    ///Panic if the pointer is null
     fn force_not_null(&self);
+
+    ///Read the pointer if it's not null, Else panic
     fn force_deref(&self) -> T;
 }
 
@@ -34,6 +38,7 @@ impl<T> ForceNotNull<T> for *const T {
 }
 
 impl<T> ForceNotNull<T> for *mut T {
+
     fn force_not_null(&self) {
         if self.is_null() {
             panic!("Unexpected null pointer");
